@@ -1,0 +1,46 @@
+/* Content styles injected into the page for element selection */
+
+#psd-overlay {
+  position: fixed !important;
+  pointer-events: none !important;
+  border: 2px dashed #4CAF50 !important;
+  background: rgba(76, 175, 80, 0.1) !important;
+  z-index: 2147483647 !important;
+  transition: all 0.1s ease !important;
+  box-sizing: border-box !important;
+}
+
+#psd-selection-indicator {
+  position: fixed !important;
+  pointer-events: none !important;
+  border: 3px solid #2196F3 !important;
+  background: rgba(33, 150, 243, 0.1) !important;
+  z-index: 2147483646 !important;
+  box-sizing: border-box !important;
+  animation: psd-pulse 2s infinite !important;
+}
+
+#psd-label {
+  position: fixed !important;
+  background: #333 !important;
+  color: white !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+  white-space: nowrap !important;
+  max-width: 300px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+@keyframes psd-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(33, 150, 243, 0);
+  }
+}

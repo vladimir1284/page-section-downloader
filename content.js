@@ -10,6 +10,8 @@
   let selectedElement = null;
   let hoveredElement = null;
   let currentDepthElement = null; // Track element at current navigation depth
+  let matchedElements = []; // Store elements matching a selector
+  let currentMatchIndex = 0; // Current index in matched elements
   
   // Create highlight overlay
   const overlay = document.createElement('div');
@@ -341,22 +343,174 @@
       }
     }
     
+    else if (message.action === 'selectBySelector') {
+      let selector = message.selector;
+      
+      // Auto-add . if it looks like a class without prefix
+      if (selector && !selector.startsWith('.') && !selector.startsWith('#') && !selector.includes(' ') && !selector.includes('[') && !selector.includes(':')) {
+        // Try as-is first (could be a tag name), then try with .
+        try {
+          const directMatch = document.querySelectorAll(selector);
+          if (directMatch.length === 0) {
+            selector = '.' + selector;
+          }
+        } catch (e) {
+          selector = '.' + selector;
+        }
+      }
+      
+      try {
+        const elements = document.querySelectorAll(selector);
+        
+        if (elements.length === 0) {
+          sendResponse({ success: false, error: `No se encontró: ${selector}` });
+          return true;
+        }
+        
+        // Filter out our own elements
+        matchedElements = Array.from(elements).filter(el => !isOurElement(el));
+        
+        if (matchedElements.length === 0) {
+          sendResponse({ success: false, error: `No se encontró: ${selector}` });
+          return true;
+        }
+        
+        currentMatchIndex = 0;
+        selectedElement = matchedElements[0];
+        
+        // Scroll element into view
+        selectedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Show selection indicator
+        const rect = selectedElement.getBoundingClientRect();
+        setTimeout(() => {
+          const newRect = selectedElement.getBoundingClientRect();
+          selectionIndicator.style.display = 'block';
+          selectionIndicator.style.top = newRect.top + 'px';
+          selectionIndicator.style.left = newRect.left + 'px';
+          selectionIndicator.style.width = newRect.width + 'px';
+          selectionIndicator.style.height = newRect.height + 'px';
+        }, 300);
+        
+        sendResponse({
+          success: true,
+          hasSelection: true,
+          tagName: selectedElement.tagName,
+          id: selectedElement.id || '',
+          className: typeof selectedElement.className === 'string' ? 
+            selectedElement.className.split(' ').filter(c => !c.startsWith('psd-')).join(' ') : '',
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          pageTitle: document.title,
+          pageUrl: window.location.href,
+          matchCount: matchedElements.length,
+          currentIndex: currentMatchIndex
+        });
+      } catch (e) {
+        sendResponse({ success: false, error: `Selector inválido: ${e.message}` });
+      }
+    }
+    
+    else if (message.action === 'navigateMatch') {
+      if (matchedElements.length === 0) {
+        sendResponse({ success: false, error: 'No hay elementos para navegar' });
+        return true;
+      }
+      
+      currentMatchIndex += message.direction;
+      if (currentMatchIndex < 0) currentMatchIndex = matchedElements.length - 1;
+      if (currentMatchIndex >= matchedElements.length) currentMatchIndex = 0;
+      
+      selectedElement = matchedElements[currentMatchIndex];
+      
+      // Scroll element into view
+      selectedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Update selection indicator
+      setTimeout(() => {
+        const rect = selectedElement.getBoundingClientRect();
+        selectionIndicator.style.display = 'block';
+        selectionIndicator.style.top = rect.top + 'px';
+        selectionIndicator.style.left = rect.left + 'px';
+        selectionIndicator.style.width = rect.width + 'px';
+        selectionIndicator.style.height = rect.height + 'px';
+      }, 300);
+      
+      const rect = selectedElement.getBoundingClientRect();
+      sendResponse({
+        success: true,
+        hasSelection: true,
+        tagName: selectedElement.tagName,
+        id: selectedElement.id || '',
+        className: typeof selectedElement.className === 'string' ? 
+          selectedElement.className.split(' ').filter(c => !c.startsWith('psd-')).join(' ') : '',
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        pageTitle: document.title,
+        pageUrl: window.location.href,
+        matchCount: matchedElements.length,
+        currentIndex: currentMatchIndex
+      });
+    }
+    
     else if (message.action === 'getContent') {
       if (!selectedElement) {
-        sendResponse({ content: null });
+        sendResponse({ content: null, error: 'No hay elemento seleccionado' });
         return true;
       }
       
       let content = '';
+      let sourceElement = selectedElement;
       
-      if (message.format === 'html') {
-        if (message.includeStyles) {
-          content = getHtmlWithStyles(selectedElement);
-        } else {
-          content = selectedElement.outerHTML;
+      // Try to get content from iframe if the selected element is an iframe
+      if (selectedElement.tagName === 'IFRAME') {
+        try {
+          const iframeDoc = selectedElement.contentDocument || selectedElement.contentWindow?.document;
+          if (iframeDoc) {
+            sourceElement = iframeDoc.body || iframeDoc.documentElement;
+          } else {
+            sendResponse({ 
+              content: null, 
+              error: 'No se puede acceder al contenido del iframe (cross-origin protegido)' 
+            });
+            return true;
+          }
+        } catch (e) {
+          sendResponse({ 
+            content: null, 
+            error: 'Iframe protegido por política de seguridad: ' + e.message 
+          });
+          return true;
         }
-        // Wrap in basic HTML structure
-        content = `<!DOCTYPE html>
+      }
+      
+      // Try to access shadow DOM content
+      if (sourceElement.shadowRoot) {
+        try {
+          sourceElement = sourceElement.shadowRoot;
+        } catch (e) {
+          // Closed shadow root, can't access
+        }
+      }
+      
+      try {
+        if (message.format === 'html') {
+          if (message.includeStyles) {
+            content = getHtmlWithStyles(sourceElement);
+          } else {
+            content = sourceElement.outerHTML || sourceElement.innerHTML;
+          }
+          
+          // If content is too small, try to get from nested iframes
+          if (!content || content.length < 50) {
+            const iframeContent = getContentFromIframes(sourceElement);
+            if (iframeContent && iframeContent.length > content.length) {
+              content = iframeContent;
+            }
+          }
+          
+          // Wrap in basic HTML structure
+          content = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -371,18 +525,56 @@
   ${content}
 </body>
 </html>`;
+        }
+        
+        else if (message.format === 'text') {
+          // Try multiple methods to get text
+          content = sourceElement.innerText || sourceElement.textContent || '';
+          
+          // If no content, try selection API
+          if (!content.trim()) {
+            content = getVisibleText(sourceElement);
+          }
+          
+          // If still no content, try getting from nested iframes
+          if (!content.trim()) {
+            const iframeContent = getContentFromIframes(sourceElement);
+            if (iframeContent) {
+              const temp = document.createElement('div');
+              temp.innerHTML = iframeContent;
+              content = temp.innerText || temp.textContent || '';
+            }
+          }
+          
+          if (!content.trim()) {
+            sendResponse({ 
+              content: null, 
+              error: 'El elemento no tiene contenido de texto accesible' 
+            });
+            return true;
+          }
+        }
+        
+        else if (message.format === 'markdown') {
+          content = htmlToMarkdown(sourceElement);
+          content = `<!-- Extracted from: ${window.location.href} -->\n\n${content}`;
+        }
+        
+        if (!content || content.trim().length < 10) {
+          sendResponse({ 
+            content: null, 
+            error: 'No se pudo extraer contenido (puede estar protegido o vacío)' 
+          });
+          return true;
+        }
+        
+        sendResponse({ content: content });
+      } catch (e) {
+        sendResponse({ 
+          content: null, 
+          error: 'Error al extraer contenido: ' + e.message 
+        });
       }
-      
-      else if (message.format === 'text') {
-        content = selectedElement.innerText || selectedElement.textContent;
-      }
-      
-      else if (message.format === 'markdown') {
-        content = htmlToMarkdown(selectedElement);
-        content = `<!-- Extracted from: ${window.location.href} -->\n\n${content}`;
-      }
-      
-      sendResponse({ content: content });
     }
     
     return true;
@@ -394,24 +586,30 @@
     
     // Get computed styles for the element and all descendants
     function inlineStyles(el, originalEl) {
-      const computed = window.getComputedStyle(originalEl);
-      const important = [
-        'color', 'background-color', 'background', 'font-family', 'font-size', 
-        'font-weight', 'line-height', 'text-align', 'padding', 'margin',
-        'border', 'display', 'flex-direction', 'justify-content', 'align-items',
-        'width', 'max-width', 'gap'
-      ];
+      if (!originalEl || !el) return;
       
-      let styleStr = '';
-      important.forEach(prop => {
-        const value = computed.getPropertyValue(prop);
-        if (value && value !== 'initial' && value !== 'none' && value !== 'normal') {
-          styleStr += `${prop}: ${value}; `;
+      try {
+        const computed = window.getComputedStyle(originalEl);
+        const important = [
+          'color', 'background-color', 'background', 'font-family', 'font-size', 
+          'font-weight', 'line-height', 'text-align', 'padding', 'margin',
+          'border', 'display', 'flex-direction', 'justify-content', 'align-items',
+          'width', 'max-width', 'gap'
+        ];
+        
+        let styleStr = '';
+        important.forEach(prop => {
+          const value = computed.getPropertyValue(prop);
+          if (value && value !== 'initial' && value !== 'none' && value !== 'normal') {
+            styleStr += `${prop}: ${value}; `;
+          }
+        });
+        
+        if (styleStr) {
+          el.setAttribute('style', styleStr);
         }
-      });
-      
-      if (styleStr) {
-        el.setAttribute('style', styleStr);
+      } catch (e) {
+        // Ignore style errors
       }
       
       // Process children
@@ -425,7 +623,42 @@
     }
     
     inlineStyles(clone, element);
-    return clone.outerHTML;
+    return clone.outerHTML || clone.innerHTML || '';
+  }
+  
+  // Alternative method: get content from nested iframes
+  function getContentFromIframes(element) {
+    let content = '';
+    const iframes = element.querySelectorAll('iframe');
+    
+    for (const iframe of iframes) {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc && doc.body) {
+          content += doc.body.innerHTML || '';
+        }
+      } catch (e) {
+        // Cross-origin, skip
+      }
+    }
+    
+    return content;
+  }
+  
+  // Alternative method: use Selection API to get visible text
+  function getVisibleText(element) {
+    try {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const text = selection.toString();
+      selection.removeAllRanges();
+      return text;
+    } catch (e) {
+      return element.innerText || element.textContent || '';
+    }
   }
   
   // Convert HTML to Markdown

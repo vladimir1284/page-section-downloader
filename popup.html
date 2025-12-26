@@ -18,6 +18,19 @@
       <p class="hint">Click to start selecting an element on the page</p>
     </div>
 
+    <div class="section">
+      <h2>Seleccionar por Clase/Selector</h2>
+      <div class="selector-group">
+        <input type="text" id="classInput" placeholder=".mi-clase o #mi-id o article">
+        <button id="selectByClassBtn" class="btn btn-secondary">
+          <span class="icon">🔍</span>
+          Buscar
+        </button>
+      </div>
+      <p class="hint">Ingresa una clase (.clase), ID (#id) o selector CSS</p>
+      <div id="matchInfo" class="match-info hidden"></div>
+    </div>
+
     <div id="selectedInfo" class="section hidden">
       <h2>Selected Element</h2>
       <div class="info-box">

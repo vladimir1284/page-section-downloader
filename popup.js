@@ -6,9 +6,19 @@ let selectedElementData = null;
 document.addEventListener('DOMContentLoaded', async () => {
   const selectBtn = document.getElementById('selectBtn');
   const downloadBtn = document.getElementById('downloadBtn');
+  const selectByClassBtn = document.getElementById('selectByClassBtn');
+  const classInput = document.getElementById('classInput');
   
   selectBtn.addEventListener('click', startSelection);
   downloadBtn.addEventListener('click', downloadSection);
+  selectByClassBtn.addEventListener('click', selectByClass);
+  
+  // Allow Enter key in class input
+  classInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      selectByClass();
+    }
+  });
   
   // Check if there's already a selected element
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -22,6 +32,97 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+// Select element by class/selector
+async function selectByClass() {
+  const classInput = document.getElementById('classInput');
+  let selector = classInput.value.trim();
+  
+  if (!selector) {
+    showStatus('Ingresa una clase o selector', 'error');
+    return;
+  }
+  
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  
+  // Inject content script if needed
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ['content.js']
+    });
+  } catch (e) {
+    // Script may already be injected
+  }
+  
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId: tab.id, allFrames: true },
+      files: ['content-styles.css']
+    });
+  } catch (e) {}
+  
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, { 
+      action: 'selectBySelector',
+      selector: selector
+    });
+    
+    if (response && response.success) {
+      updateSelectedInfo(response);
+      showMatchInfo(response.matchCount, response.currentIndex);
+      showStatus(`Elemento encontrado: ${response.tagName}`, 'success');
+    } else {
+      showStatus(response.error || 'No se encontró ningún elemento', 'error');
+      hideMatchInfo();
+    }
+  } catch (e) {
+    showStatus('Error: ' + e.message, 'error');
+  }
+}
+
+// Show match navigation info
+function showMatchInfo(total, current) {
+  const matchInfo = document.getElementById('matchInfo');
+  if (total > 1) {
+    matchInfo.innerHTML = `
+      <span>Elemento ${current + 1} de ${total}</span>
+      <div class="match-nav">
+        <button id="prevMatchBtn" class="btn-small">◀ Anterior</button>
+        <button id="nextMatchBtn" class="btn-small">Siguiente ▶</button>
+      </div>
+    `;
+    matchInfo.classList.remove('hidden');
+    
+    document.getElementById('prevMatchBtn').addEventListener('click', () => navigateMatch(-1));
+    document.getElementById('nextMatchBtn').addEventListener('click', () => navigateMatch(1));
+  } else {
+    matchInfo.classList.add('hidden');
+  }
+}
+
+function hideMatchInfo() {
+  document.getElementById('matchInfo').classList.add('hidden');
+}
+
+// Navigate between multiple matches
+async function navigateMatch(direction) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  
+  try {
+    const response = await chrome.tabs.sendMessage(tab.id, { 
+      action: 'navigateMatch',
+      direction: direction
+    });
+    
+    if (response && response.success) {
+      updateSelectedInfo(response);
+      showMatchInfo(response.matchCount, response.currentIndex);
+    }
+  } catch (e) {
+    showStatus('Error: ' + e.message, 'error');
+  }
+}
+
 // Start element selection mode
 async function startSelection() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -29,7 +130,7 @@ async function startSelection() {
   // Inject content script if needed
   try {
     await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
+      target: { tabId: tab.id, allFrames: true },
       files: ['content.js']
     });
   } catch (e) {
@@ -39,7 +140,7 @@ async function startSelection() {
   // Inject styles
   try {
     await chrome.scripting.insertCSS({
-      target: { tabId: tab.id },
+      target: { tabId: tab.id, allFrames: true },
       files: ['content-styles.css']
     });
   } catch (e) {
@@ -155,6 +256,11 @@ async function downloadSection() {
       includeStyles: includeStyles
     });
     
+    if (response && response.error) {
+      showStatus(response.error, 'error');
+      return;
+    }
+    
     if (response && response.content) {
       // Send to background script for download
       chrome.runtime.sendMessage({
@@ -164,9 +270,9 @@ async function downloadSection() {
         mimeType: format === 'html' ? 'text/html' : 'text/plain'
       });
       
-      showStatus(`Downloaded: ${filename}`, 'success');
+      showStatus(`Descargado: ${filename}`, 'success');
     } else {
-      showStatus('Failed to get content', 'error');
+      showStatus('No se pudo obtener el contenido - puede estar protegido', 'error');
     }
   } catch (e) {
     showStatus('Error: ' + e.message, 'error');

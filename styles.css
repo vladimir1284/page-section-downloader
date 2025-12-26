@@ -92,6 +92,32 @@ h2 {
   background: #388E3C;
 }
 
+.btn-secondary {
+  background: #607D8B;
+  color: white;
+  flex-shrink: 0;
+  width: auto;
+  padding: 10px 14px;
+}
+
+.btn-secondary:hover {
+  background: #455A64;
+}
+
+.btn-small {
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #e0e0e0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-small:hover {
+  background: #bdbdbd;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
@@ -138,6 +164,44 @@ h2 {
 }
 
 /* Form elements */
+.selector-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.selector-group input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+.selector-group input:focus {
+  outline: none;
+  border-color: #607D8B;
+  box-shadow: 0 0 0 3px rgba(96, 125, 139, 0.1);
+}
+
+.match-info {
+  background: #e8f5e9;
+  border-radius: 6px;
+  padding: 10px;
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: #2e7d32;
+}
+
+.match-nav {
+  display: flex;
+  gap: 6px;
+}
+
 .filename-group {
   margin-bottom: 14px;
 }
